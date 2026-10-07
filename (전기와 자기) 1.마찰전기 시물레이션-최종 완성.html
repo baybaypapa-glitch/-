@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>마찰 전기 자유 탐구 시뮬레이션</title>
+<style>
+  :root {
+    --ink:#182230; --muted:#5b6778; --line:#d8e0e8; --panel:#ffffff;
+    --blue:#1769e0; --red:#e04655; --green:#5fac35; --amber:#e79a16;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; min-height:100%; background:#edf3f7; color:var(--ink); font-family:Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  body { padding:12px; }
+  .app { width:min(1120px, 100%); margin:0 auto; }
+  header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  h1 { margin:0 0 4px; font-size:clamp(21px,3vw,31px); letter-spacing:-.03em; }
+  .subtitle { margin:0; color:var(--muted); font-size:14px; line-height:1.45; }
+  .controls { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }
+  button, .toggle { min-height:42px; border:1px solid #bdc9d5; background:#fff; color:#243142; border-radius:9px; font:700 14px/1 inherit; padding:0 13px; cursor:pointer; }
+  button:active { transform:translateY(1px); background:#f1f5f9; }
+  button.primary { border-color:#155dcc; color:#fff; background:#1769e0; }
+  .toggle { display:flex; align-items:center; gap:7px; cursor:pointer; }
+  .toggle input { width:18px; height:18px; accent-color:#1769e0; }
+
+  .guide { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:9px; }
+  .guide-step { border:1px solid var(--line); background:#fff; border-radius:9px; padding:8px 10px; font-size:13px; line-height:1.4; }
+  .guide-step b { display:inline-grid; place-items:center; width:22px; height:22px; margin-right:5px; border-radius:50%; background:#e6efff; color:#155dcc; }
+
+  .stage-shell { overflow:hidden; border:1px solid #cbd6e1; border-radius:13px; background:#fff; }
+  #stage { display:block; width:100%; height:auto; aspect-ratio:1000/620; touch-action:none; user-select:none; -webkit-user-select:none; background:#f8fbfd; }
+  .draggable { cursor:grab; }
+  .draggable.dragging { cursor:grabbing; filter:drop-shadow(0 7px 5px rgba(24,34,48,.18)); }
+  .object .charge-particles { opacity:0; transition:opacity .2s; pointer-events:none; }
+  .object.charged .charge-particles { opacity:1; }
+  .home-pad { fill:#f4f7fa; stroke:#c9d3dd; stroke-width:2; stroke-dasharray:8 8; }
+  .home-label { font-size:14px; fill:#8793a1; font-weight:700; text-anchor:middle; }
+  .status-pill { fill:#fff; stroke:#bcc8d4; stroke-width:1.5; }
+  .status-text { font-size:14px; font-weight:800; text-anchor:middle; fill:#445166; }
+  .object.charged.balloon .status-pill { fill:#eaf2ff; stroke:#1769e0; }
+  .object.charged.balloon .status-text { fill:#155dcc; }
+  .object.charged.glove .status-pill { fill:#fff1e6; stroke:#de7f16; }
+  .object.charged.glove .status-text { fill:#b55c00; }
+  .object-name { font-size:17px; font-weight:900; text-anchor:middle; fill:#2d3949; paint-order:stroke; stroke:#fff; stroke-width:5; stroke-linejoin:round; }
+  .minus { fill:#0b61d8; font-size:22px; font-weight:900; text-anchor:middle; }
+  .plus { fill:#d96b00; font-size:21px; font-weight:900; text-anchor:middle; }
+  .force-label { font-size:16px; font-weight:900; text-anchor:middle; paint-order:stroke; stroke:#fff; stroke-width:5px; stroke-linejoin:round; }
+  .spark { font-size:25px; font-weight:900; text-anchor:middle; animation:pop .55s ease-out forwards; pointer-events:none; }
+  @keyframes pop { from { opacity:1; } to { opacity:0; transform:translateY(-25px) scale(1.4); } }
+
+
+  /* 전자 관찰용 원자 모형 */
+  .object .charge-particles { display:none !important; }
+  .particle-model { opacity:0; pointer-events:none; transition:opacity .18s ease; }
+  #stage.particles-visible .particle-model { opacity:1; }
+  .nucleus-core { fill:#f28c28; stroke:#9b4d00; stroke-width:1; }
+  .nucleus-sign { fill:#6f3500; font-size:7px; font-weight:900; text-anchor:middle; dominant-baseline:central; }
+  .electron-core { fill:#1769e0; stroke:#073b8c; stroke-width:1; }
+  .electron-sign { fill:#fff; font-size:7px; font-weight:900; text-anchor:middle; dominant-baseline:central; }
+  .base-electron { opacity:.82; }
+  .extra-electron .electron-core { fill:#064fc4; stroke:#002d78; stroke-width:1.4; }
+  .electron-vacancy { fill:none; stroke:#1769e0; stroke-width:1; stroke-dasharray:2 2; opacity:.4; }
+  .moving-electron { pointer-events:none; }
+  .moving-electron circle { fill:#075fd7; stroke:#fff; stroke-width:2.2; }
+  .moving-electron text { fill:#fff; font-size:11px; font-weight:900; text-anchor:middle; dominant-baseline:central; }
+  .particle-key { font-size:12px; color:#4d5a6c; }
+
+  .dashboard { display:grid; grid-template-columns:1.1fr 1fr; gap:9px; margin-top:9px; }
+  .panel { border:1px solid var(--line); background:#fff; border-radius:10px; padding:10px 12px; }
+  .panel-title { margin:0 0 8px; font-size:14px; color:#39475a; }
+  .meters { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .meter-row { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:7px; font-size:13px; }
+  .dot { width:11px; height:11px; border-radius:50%; }
+  .track { height:10px; border-radius:3px; background:#e8edf2; overflow:hidden; }
+  .fill { height:100%; width:0; background:#1769e0; transition:width .12s linear; }
+  .meter-value { width:38px; text-align:right; color:#526074; font-variant-numeric:tabular-nums; }
+  #message { min-height:23px; margin:0; font-weight:800; font-size:15px; line-height:1.5; color:#174c93; }
+  .badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+  .badge { border:1px solid #cbd5df; border-radius:6px; background:#f7f9fb; color:#748092; padding:5px 8px; font-size:12px; font-weight:800; }
+  .badge.on { border-color:#4b9c55; background:#eaf7ec; color:#247331; }
+  .science-note { margin:7px 2px 0; color:#667386; font-size:12px; line-height:1.4; }
+
+  @media (max-width:760px) {
+    body { padding:7px; }
+    header { display:block; }
+    .controls { justify-content:flex-start; margin-top:8px; }
+    .guide { grid-template-columns:1fr; gap:4px; }
+    .guide-step { padding:6px 8px; }
+    .dashboard { grid-template-columns:1fr; }
+    button, .toggle { min-height:40px; font-size:13px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>마찰 전기 자유 탐구</h1>
+      <p class="subtitle">물체는 정해진 위치에서 시작합니다. 손가락이나 마우스로 잡은 뒤 실험판 안에서 자유롭게 움직여 보세요.</p>
+    </div>
+    <div class="controls" aria-label="실험 조작">
+      <button id="resetBtn" class="primary" type="button">처음부터 다시</button>
+      <button id="stopBtn" type="button">움직임 멈추기</button>
+      <label class="toggle"><input id="chargeToggle" type="checkbox" checked> 전자 관찰</label>
+      <label class="toggle"><input id="forceToggle" type="checkbox" checked> 힘 보기</label>
+    </div>
+  </header>
+
+  <section class="guide" aria-label="실험 순서">
+    <div class="guide-step"><b>1</b>면장갑과 풍선을 겹친 채 <strong>위아래로 한 번 왕복</strong>합니다. 왕복할 때마다 전자 1개가 이동합니다.</div>
+    <div class="guide-step"><b>2</b>대전된 풍선 가까이 장갑을 움직여 풍선이 <strong>따라오는지</strong> 봅니다.</div>
+    <div class="guide-step"><b>3</b>대전된 두 풍선을 가까이 하여 서로 <strong>밀어내는지</strong> 봅니다.</div>
+  </section>
+
+  <div class="stage-shell">
+    <svg id="stage" viewBox="0 0 1000 620" role="application" aria-label="풍선 두 개와 면장갑을 움직이는 마찰 전기 실험판">
+      <defs>
+        <radialGradient id="greenGrad" cx="35%" cy="28%" r="70%">
+          <stop offset="0" stop-color="#d8f78d"/><stop offset=".55" stop-color="#91cf42"/><stop offset="1" stop-color="#57a52d"/>
+        </radialGradient>
+        <radialGradient id="redGrad" cx="35%" cy="28%" r="70%">
+          <stop offset="0" stop-color="#ffb5b5"/><stop offset=".55" stop-color="#ef5964"/><stop offset="1" stop-color="#c92f47"/>
+        </radialGradient>
+        <linearGradient id="gloveGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#fffef5"/><stop offset="1" stop-color="#dce1d5"/>
+        </linearGradient>
+        <pattern id="knit" width="8" height="8" patternUnits="userSpaceOnUse">
+          <path d="M0 2 H8 M0 6 H8" stroke="#bfc7bb" stroke-width="1" opacity=".7"/>
+        </pattern>
+        <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#1769e0"/>
+        </marker>
+        <marker id="arrowRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 Z" fill="#df4053"/>
+        </marker>
+      </defs>
+
+      <rect width="1000" height="620" fill="#f8fbfd"/>
+      <path d="M0 510 Q250 485 500 510 T1000 510 V620 H0Z" fill="#edf4f2"/>
+      <text x="32" y="42" font-size="15" font-weight="800" fill="#748092">실험판 · 물체를 직접 잡아 움직이세요</text>
+
+      <g id="homeLayer" aria-hidden="true">
+        <ellipse class="home-pad" cx="180" cy="302" rx="78" ry="98"/>
+        <text class="home-label" x="180" y="430">초록 풍선 시작 위치</text>
+        <ellipse class="home-pad" cx="430" cy="302" rx="78" ry="98"/>
+        <text class="home-label" x="430" y="430">빨간 풍선 시작 위치</text>
+        <ellipse class="home-pad" cx="820" cy="302" rx="90" ry="110"/>
+        <text class="home-label" x="820" y="430">면장갑 시작 위치</text>
+      </g>
+
+      <g id="forceLayer" pointer-events="none"></g>
+      <g id="effectsLayer" pointer-events="none"></g>
+
+      <g id="objectsLayer">
+        <g id="green" class="object balloon draggable" data-id="green" transform="translate(180 300)" tabindex="0" role="img" aria-label="초록 풍선, 중성">
+          <ellipse cx="0" cy="8" rx="82" ry="108" fill="transparent" pointer-events="all"/>
+          <path d="M0 62 C-5 85 7 90 0 108 C-6 125 -1 139 5 154" fill="none" stroke="#748092" stroke-width="2.2"/>
+          <ellipse cx="0" cy="-8" rx="64" ry="75" fill="url(#greenGrad)" stroke="#4a9626" stroke-width="3"/>
+          <ellipse cx="-22" cy="-38" rx="14" ry="25" fill="#fff" opacity=".3" transform="rotate(25 -22 -38)"/>
+          <path d="M-11 62 L0 77 L12 62Z" fill="#64ae32" stroke="#4a9626" stroke-width="2"/>
+          <g class="charge-particles" aria-hidden="true">
+            <text class="minus" x="-37" y="-25">−</text><text class="minus" x="28" y="-35">−</text>
+            <text class="minus" x="-28" y="30">−</text><text class="minus" x="35" y="23">−</text>
+            <text class="minus" x="2" y="3">−</text>
+          </g>
+          <rect class="status-pill" x="-44" y="-111" width="88" height="28" rx="7"/>
+          <text id="greenStatus" class="status-text" x="0" y="-92">중성</text>
+          <text class="object-name" x="0" y="181">초록 풍선</text>
+        </g>
+
+        <g id="red" class="object balloon draggable" data-id="red" transform="translate(430 300)" tabindex="0" role="img" aria-label="빨간 풍선, 중성">
+          <ellipse cx="0" cy="8" rx="82" ry="108" fill="transparent" pointer-events="all"/>
+          <path d="M0 62 C5 84 -7 93 0 111 C6 127 1 140 -6 154" fill="none" stroke="#748092" stroke-width="2.2"/>
+          <ellipse cx="0" cy="-8" rx="64" ry="75" fill="url(#redGrad)" stroke="#bd2d43" stroke-width="3"/>
+          <ellipse cx="-22" cy="-38" rx="14" ry="25" fill="#fff" opacity=".28" transform="rotate(25 -22 -38)"/>
+          <path d="M-11 62 L0 77 L12 62Z" fill="#d63f51" stroke="#bd2d43" stroke-width="2"/>
+          <g class="charge-particles" aria-hidden="true">
+            <text class="minus" x="-37" y="-25">−</text><text class="minus" x="28" y="-35">−</text>
+            <text class="minus" x="-28" y="30">−</text><text class="minus" x="35" y="23">−</text>
+            <text class="minus" x="2" y="3">−</text>
+          </g>
+          <rect class="status-pill" x="-44" y="-111" width="88" height="28" rx="7"/>
+          <text id="redStatus" class="status-text" x="0" y="-92">중성</text>
+          <text class="object-name" x="0" y="181">빨간 풍선</text>
+        </g>
+
+        <g id="glove" class="object glove draggable" data-id="glove" transform="translate(820 300)" tabindex="0" role="img" aria-label="면장갑, 중성">
+          <ellipse cx="0" cy="0" rx="94" ry="116" fill="transparent" pointer-events="all"/>
+          <g transform="rotate(-8)">
+            <rect x="-48" y="-25" width="97" height="100" rx="25" fill="url(#gloveGrad)" stroke="#8e998b" stroke-width="3"/>
+            <rect x="-51" y="-94" width="21" height="85" rx="10" fill="url(#gloveGrad)" stroke="#8e998b" stroke-width="3"/>
+            <rect x="-27" y="-106" width="21" height="96" rx="10" fill="url(#gloveGrad)" stroke="#8e998b" stroke-width="3"/>
+            <rect x="-3" y="-101" width="21" height="92" rx="10" fill="url(#gloveGrad)" stroke="#8e998b" stroke-width="3"/>
+            <rect x="21" y="-88" width="21" height="81" rx="10" fill="url(#gloveGrad)" stroke="#8e998b" stroke-width="3"/>
+            <path d="M-39 -18 C-64 -48 -86 -34 -76 -13 L-48 32 C-38 45 -21 28 -28 16Z" fill="url(#gloveGrad)" stroke="#8e998b" stroke-width="3"/>
+            <rect x="-48" y="-25" width="97" height="100" rx="25" fill="url(#knit)" opacity=".65"/>
+            <rect x="-55" y="62" width="111" height="31" rx="6" fill="#d6ded2" stroke="#8e998b" stroke-width="3"/>
+            <path d="M-42 70 H43 M-42 79 H43 M-42 88 H43" stroke="#a7b1a3" stroke-width="2"/>
+          </g>
+          <g class="charge-particles" aria-hidden="true">
+            <text class="plus" x="-45" y="-22">+</text><text class="plus" x="37" y="-37">+</text>
+            <text class="plus" x="-23" y="35">+</text><text class="plus" x="39" y="33">+</text>
+            <text class="plus" x="4" y="2">+</text>
+          </g>
+          <rect class="status-pill" x="-48" y="-137" width="96" height="28" rx="7"/>
+          <text id="gloveStatus" class="status-text" x="0" y="-118">중성</text>
+          <text class="object-name" x="0" y="133">면장갑</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <section class="dashboard">
+    <div class="panel">
+      <h2 class="panel-title">풍선으로 이동한 전자 수 <span style="font-size:12px;font-weight:700;color:#667085">(각 최대 10개)</span></h2>
+      <div class="meters">
+        <div class="meter-row"><span class="dot" style="background:#69ae36"></span><span class="track"><span id="greenFill" class="fill"></span></span><span id="greenValue" class="meter-value">0/10</span></div>
+        <div class="meter-row"><span class="dot" style="background:#df4053"></span><span class="track"><span id="redFill" class="fill"></span></span><span id="redValue" class="meter-value">0/10</span></div>
+      </div>
+    </div>
+    <div class="panel" aria-live="polite">
+      <h2 class="panel-title">관찰 안내</h2>
+      <p id="message">전자 관찰을 켠 뒤 면장갑과 풍선을 겹쳐 위아래로 한 번 왕복해 보세요.</p>
+      <div class="badges">
+        <span id="greenBadge" class="badge">초록 풍선 대전</span>
+        <span id="redBadge" class="badge">빨간 풍선 대전</span>
+        <span id="attractBadge" class="badge">풍선–장갑 끌림 관찰</span>
+        <span id="repelBadge" class="badge">풍선–풍선 밀어냄 관찰</span>
+        <span id="returnBadge" class="badge">전자 원위치 복귀 관찰</span>
+      </div>
+    </div>
+  </section>
+  <p class="science-note"><strong>관찰 시간:</strong> 전자마다 이동 시점부터 정확히 10초 뒤에 독립적으로 원래 자리로 돌아갑니다. <strong>입자 모형:</strong> 전자 관찰을 켜면 주황색 원자핵(+)은 물체에 고정되어 있고, 파란색 전자(−)만 이동합니다. 풍선마다 전자가 최대 10개까지 이동하며, 힘은 기존 최대 세기의 약 60%(6/10)로 조절됩니다. 조작을 멈춘 뒤 10초가 지나면 전자가 약 2초 간격으로 하나씩 원래 면장갑 자리로 돌아갑니다. 실제 대전 정도와 방전 시간은 재료와 습도에 따라 달라질 수 있습니다.</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('stage');
+  const objectsLayer = document.getElementById('objectsLayer');
+  const forceLayer = document.getElementById('forceLayer');
+  const effectsLayer = document.getElementById('effectsLayer');
+  const message = document.getElementById('message');
+  const chargeToggle = document.getElementById('chargeToggle');
+  const forceToggle = document.getElementById('forceToggle');
+
+  const MAX_ELECTRONS = 10;
+  const GLOVE_ELECTRONS = 20;
+  const HALF_STROKE_DISTANCE = 26;
+  // 표시 단계는 10단계이지만 실제 움직임은 낮은 상한값으로 제한합니다.
+  const FORCE_SCALE = 0.6;
+  const MAX_ATTRACTION_FORCE = 0.72;
+  const MAX_REPULSION_FORCE = 0.85;
+  const CONTACT_SEPARATION_FORCE = 0.34;
+  const HELD_REACTION_BOOST = 1.12;
+  const RETURN_DELAY = 10000;
+  const ELECTRON_ANIMATION_MS = 780;
+
+  const RETURN_ANIMATION_MS = 2400;
+  const BALLOON_SITES = [
+    {x:-27,y:-49}, {x:0,y:-53}, {x:27,y:-45},
+    {x:-40,y:-20}, {x:-13,y:-24}, {x:15,y:-20}, {x:40,y:-12},
+    {x:-32,y:12}, {x:0,y:15}, {x:31,y:18}
+  ];
+
+  const GLOVE_SITES = [
+    {x:-40,y:-56}, {x:-16,y:-69}, {x:8,y:-65}, {x:32,y:-54},
+    {x:-36,y:-14}, {x:-12,y:-14}, {x:12,y:-14}, {x:36,y:-14},
+    {x:-36,y:7}, {x:-12,y:7}, {x:12,y:7}, {x:36,y:7},
+    {x:-36,y:28}, {x:-12,y:28}, {x:12,y:28}, {x:36,y:28},
+    {x:-36,y:49}, {x:-12,y:49}, {x:12,y:49}, {x:36,y:49}
+  ];
+
+  const items = {
+    green: {
+      id:'green', type:'balloon', x:180, y:300, homeX:180, homeY:300,
+      vx:0, vy:0, charge:0, rub:0, electronCount:0,
+      stroke:{phase:0, dir:0, travel:0, firstDir:0, reverseTravel:0}
+    },
+    red: {
+      id:'red', type:'balloon', x:430, y:300, homeX:430, homeY:300,
+      vx:0, vy:0, charge:0, rub:0, electronCount:0,
+      stroke:{phase:0, dir:0, travel:0, firstDir:0, reverseTravel:0}
+    },
+    glove: {
+      id:'glove', type:'glove', x:820, y:300, homeX:820, homeY:300,
+      vx:0, vy:0, charge:0, rub:0, lostElectrons:0
+    }
+  };
+
+  const observed = { attract:false, repel:false, returned:false };
+  const transferRecords = [];
+  let drag = null;
+  let lastFrame = performance.now();
+  let lastNotice = '';
+  let animationGeneration = 0;
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function distance(a, b) {
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  }
+
+  function pointFromEvent(event) {
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return {x:0, y:0};
+    return point.matrixTransform(matrix.inverse());
+  }
+
+  function setNotice(text) {
+    if (lastNotice !== text) {
+      message.textContent = text;
+      lastNotice = text;
+    }
+  }
+
+  function balloonName(id) {
+    return id === 'green' ? '초록 풍선' : '빨간 풍선';
+  }
+
+  function resetStroke(balloon) {
+    balloon.stroke.phase = 0;
+    balloon.stroke.dir = 0;
+    balloon.stroke.travel = 0;
+    balloon.stroke.firstDir = 0;
+    balloon.stroke.reverseTravel = 0;
+  }
+
+  function activeRecords() {
+    return transferRecords.filter(function (record) {
+      return !record.returning;
+    });
+  }
+
+  function syncChargesFromElectrons() {
+    const active = activeRecords();
+    ['green', 'red'].forEach(function (id) {
+      const count = active.filter(function (record) {
+        return record.balloonId === id;
+      }).length;
+      items[id].electronCount = count;
+      items[id].rub = count;
+      items[id].charge = count > 0 ? -count : 0;
+    });
+    items.glove.lostElectrons = active.length;
+    items.glove.charge = active.length > 0 ? active.length : 0;
+  }
+
+  function svgElement(tag, attributes) {
+    const element = document.createElementNS(NS, tag);
+    Object.keys(attributes || {}).forEach(function (key) {
+      element.setAttribute(key, attributes[key]);
+    });
+    return element;
+  }
+
+  function appendNucleus(parent, x, y) {
+    const group = svgElement('g', {class:'atomic-nucleus'});
+    group.appendChild(svgElement('circle', {class:'nucleus-core', cx:x, cy:y, r:4.2}));
+    const sign = svgElement('text', {class:'nucleus-sign', x:x, y:y + 0.3});
+    sign.textContent = '+';
+    group.appendChild(sign);
+    parent.appendChild(group);
+  }
+
+  function appendElectron(parent, x, y, className) {
+    const group = svgElement('g', {class:className || 'base-electron'});
+    group.appendChild(svgElement('circle', {class:'electron-core', cx:x, cy:y, r:4.1}));
+    const sign = svgElement('text', {class:'electron-sign', x:x, y:y + 0.3});
+    sign.textContent = '−';
+    group.appendChild(sign);
+    parent.appendChild(group);
+  }
+
+  function initParticleModels() {
+    ['green', 'red', 'glove'].forEach(function (id) {
+      const old = document.getElementById(id + 'ParticleModel');
+      if (old) old.remove();
+      const group = svgElement('g', {
+        id:id + 'ParticleModel',
+        class:'particle-model',
+        'aria-hidden':'true'
+      });
+      document.getElementById(id).appendChild(group);
+    });
+    updateParticleModels();
+  }
+
+  function updateParticleModels() {
+    ['green', 'red'].forEach(function (id) {
+      const layer = document.getElementById(id + 'ParticleModel');
+      if (!layer) return;
+      layer.replaceChildren();
+      const records = transferRecords.filter(function (record) {
+        return record.balloonId === id;
+      });
+      BALLOON_SITES.forEach(function (site, index) {
+        appendNucleus(layer, site.x, site.y);
+        appendElectron(layer, site.x - 6.5, site.y + 6.5, 'base-electron');
+        const record = records.find(function (entry) {
+          return entry.balloonSlot === index;
+        });
+        if (record && !record.animating && !record.returning) {
+          appendElectron(layer, site.x + 7, site.y - 6.5, 'extra-electron');
+        }
+      });
+    });
+
+    const gloveLayer = document.getElementById('gloveParticleModel');
+    if (gloveLayer) {
+      gloveLayer.replaceChildren();
+      const occupied = new Set(transferRecords.map(function (record) {
+        return record.gloveSlot;
+      }));
+      GLOVE_SITES.forEach(function (site, index) {
+        appendNucleus(gloveLayer, site.x, site.y);
+        if (occupied.has(index)) {
+          gloveLayer.appendChild(svgElement('circle', {
+            class:'electron-vacancy',
+            cx:site.x + 6.5,
+            cy:site.y - 6.5,
+            r:4.2
+          }));
+        } else {
+          appendElectron(gloveLayer, site.x + 6.5, site.y - 6.5, 'base-electron');
+        }
+      });
+    }
+  }
+
+  function updateChargeDisplay() {
+    svg.classList.toggle('particles-visible', chargeToggle.checked);
+    ['green', 'red'].forEach(function (id) {
+      const item = items[id];
+      const element = document.getElementById(id);
+      const status = document.getElementById(id + 'Status');
+      element.classList.toggle('charged', item.electronCount > 0);
+      status.textContent = item.electronCount > 0 ? '전자 +' + item.electronCount + '개' : '중성';
+      element.setAttribute(
+        'aria-label',
+        balloonName(id) + ', ' + (item.electronCount > 0 ? '전자 ' + item.electronCount + '개를 더 얻은 음전하' : '중성')
+      );
+    });
+    const gloveElement = document.getElementById('glove');
+    const gloveStatus = document.getElementById('gloveStatus');
+    gloveElement.classList.toggle('charged', items.glove.lostElectrons > 0);
+    gloveStatus.textContent = items.glove.lostElectrons > 0 ? '전자 −' + items.glove.lostElectrons + '개' : '중성';
+    gloveElement.setAttribute(
+      'aria-label',
+      '면장갑, ' + (items.glove.lostElectrons > 0 ? '전자 ' + items.glove.lostElectrons + '개를 잃은 양전하' : '중성')
+    );
+    updateParticleModels();
+  }
+
+  function updateMeters() {
+    ['green', 'red'].forEach(function (id) {
+      const count = items[id].electronCount;
+      const percent = clamp(count / MAX_ELECTRONS, 0, 1) * 100;
+      document.getElementById(id + 'Fill').style.width = percent + '%';
+      document.getElementById(id + 'Value').textContent = count + '/' + MAX_ELECTRONS;
+      document.getElementById(id + 'Badge').classList.toggle('on', count > 0);
+    });
+    document.getElementById('attractBadge').classList.toggle('on', observed.attract);
+    document.getElementById('repelBadge').classList.toggle('on', observed.repel);
+    const returnBadge = document.getElementById('returnBadge');
+    if (returnBadge) returnBadge.classList.toggle('on', observed.returned);
+  }
+
+  function renderItem(item) {
+    document.getElementById(item.id).setAttribute(
+      'transform',
+      'translate(' + item.x.toFixed(1) + ' ' + item.y.toFixed(1) + ')'
+    );
+  }
+
+  function localToStage(item, point, electronOffset) {
+    const offset = electronOffset || {x:0, y:0};
+    return {
+      x:item.x + point.x + offset.x,
+      y:item.y + point.y + offset.y
+    };
+  }
+
+  function animateElectron(start, end, onDone, durationMs) {
+    const generation = animationGeneration;
+    if (!chargeToggle.checked) {
+      requestAnimationFrame(function () {
+        if (generation === animationGeneration) onDone();
+      });
+      return;
+    }
+    const group = svgElement('g', {class:'moving-electron'});
+    const circle = svgElement('circle', {cx:0, cy:0, r:7.4});
+    const sign = svgElement('text', {x:0, y:0.5});
+    sign.textContent = '−';
+    group.appendChild(circle);
+    group.appendChild(sign);
+    effectsLayer.appendChild(group);
+    const startedAt = performance.now();
+    const animationDuration = durationMs || ELECTRON_ANIMATION_MS;
+
+    function frame(now) {
+      if (generation !== animationGeneration) {
+        group.remove();
+        return;
+      }
+      const progress = clamp((now - startedAt) / animationDuration, 0, 1);
+      const eased = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      const arc = -34 * Math.sin(Math.PI * eased);
+      const x = start.x + (end.x - start.x) * eased;
+      const y = start.y + (end.y - start.y) * eased + arc;
+      group.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')');
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        group.remove();
+        onDone();
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function showSpark(x, y, value, color) {
+    const text = svgElement('text', {
+      x:x,
+      y:y,
+      fill:color,
+      class:'spark'
+    });
+    text.textContent = value;
+    effectsLayer.appendChild(text);
+    window.setTimeout(function () {
+      text.remove();
+    }, 620);
+  }
+
+  function nextFreeGloveSlot() {
+    const occupied = new Set(transferRecords.map(function (record) {
+      return record.gloveSlot;
+    }));
+    for (let index = 0; index < GLOVE_ELECTRONS; index += 1) {
+      if (!occupied.has(index)) return index;
+    }
+    return -1;
+  }
+
+  function nextFreeBalloonSlot(balloonId) {
+    const occupied = new Set(
+      transferRecords
+        .filter(function (record) {
+          return record.balloonId === balloonId;
+        })
+        .map(function (record) {
+          return record.balloonSlot;
+        })
+    );
+    for (let index = 0; index < MAX_ELECTRONS; index += 1) {
+      if (!occupied.has(index)) return index;
+    }
+    return -1;
+  }
+
+  function transferOneElectron(balloon) {
+    if (balloon.electronCount >= MAX_ELECTRONS) {
+      setNotice(balloonName(balloon.id) + '에는 전자가 최대 10개까지 이동할 수 있습니다.');
+      return false;
+    }
+    const gloveSlot = nextFreeGloveSlot();
+    const balloonSlot = nextFreeBalloonSlot(balloon.id);
+    if (gloveSlot < 0 || balloonSlot < 0) return false;
+
+    const transferredAt = performance.now();
+    const record = {
+      balloonId:balloon.id,
+      gloveSlot:gloveSlot,
+      balloonSlot:balloonSlot,
+      animating:true,
+      returning:false,
+      transferredAt:transferredAt,
+      returnAt:transferredAt + RETURN_DELAY
+    };
+    transferRecords.push(record);
+    syncChargesFromElectrons();
+    updateChargeDisplay();
+    updateMeters();
+
+    const start = localToStage(items.glove, GLOVE_SITES[gloveSlot], {x:6.5, y:-6.5});
+    const end = localToStage(balloon, BALLOON_SITES[balloonSlot], {x:7, y:-6.5});
+    animateElectron(start, end, function () {
+      record.animating = false;
+      updateParticleModels();
+    });
+
+    showSpark((start.x + end.x) / 2, (start.y + end.y) / 2, '전자 이동', '#1769e0');
+    setNotice(
+      balloonName(balloon.id) + '으로 전자 1개가 이동했습니다. ' +
+      '현재 ' + balloon.electronCount + '/10개이며, 원자핵은 움직이지 않습니다.'
+    );
+    return true;
+  }
+
+  function registerVerticalStroke(balloon, verticalDelta) {
+    if (Math.abs(verticalDelta) < 0.8) return false;
+    const direction = verticalDelta > 0 ? 1 : -1;
+    const amount = Math.abs(verticalDelta);
+    const tracker = balloon.stroke;
+
+    if (tracker.phase === 0) {
+      if (tracker.dir === 0 || tracker.dir === direction) {
+        tracker.dir = direction;
+        tracker.travel += amount;
+      } else {
+        tracker.dir = direction;
+        tracker.travel = amount;
+      }
+      if (tracker.travel >= HALF_STROKE_DISTANCE) {
+        tracker.phase = 1;
+        tracker.firstDir = tracker.dir;
+        tracker.reverseTravel = 0;
+      }
+      return false;
+    }
+
+    if (direction === -tracker.firstDir) {
+      tracker.reverseTravel += amount;
+    } else {
+      tracker.reverseTravel = Math.max(0, tracker.reverseTravel - amount * 0.45);
+    }
+
+    if (tracker.reverseTravel >= HALF_STROKE_DISTANCE) {
+      resetStroke(balloon);
+      return true;
+    }
+    return false;
+  }
+
+  function processRubbing(movedDistance, verticalDelta) {
+    if (!drag || movedDistance < 0.8) return;
+    const glove = items.glove;
+    ['green', 'red'].forEach(function (id) {
+      const balloon = items[id];
+      const pairIsMoving = drag.id === 'glove' || drag.id === id;
+      const touching = distance(balloon, glove) < 122;
+      if (!pairIsMoving || !touching) {
+        resetStroke(balloon);
+        return;
+      }
+      if (registerVerticalStroke(balloon, verticalDelta)) {
+        transferOneElectron(balloon);
+      } else if (balloon.electronCount < MAX_ELECTRONS) {
+        setNotice(
+          balloonName(id) + '과 면장갑을 겹친 채 위아래로 왕복하세요. ' +
+          '한 번 왕복할 때 전자 1개가 이동합니다.'
+        );
+      }
+    });
+  }
+
+  function beginDrag(event) {
+    const id = event.currentTarget.dataset.id;
+    const item = items[id];
+    const point = pointFromEvent(event);
+    event.preventDefault();
+    svg.setPointerCapture(event.pointerId);
+    drag = {
+      id:id,
+      pointerId:event.pointerId,
+      offsetX:point.x - item.x,
+      offsetY:point.y - item.y
+    };
+    item.vx = 0;
+    item.vy = 0;
+    event.currentTarget.classList.add('dragging');
+    objectsLayer.appendChild(event.currentTarget);
+  }
+
+  function moveDrag(event) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    event.preventDefault();
+    const item = items[drag.id];
+    const point = pointFromEvent(event);
+    const oldX = item.x;
+    const oldY = item.y;
+    item.x = clamp(point.x - drag.offsetX, 85, 915);
+    item.y = clamp(point.y - drag.offsetY, 135, 475);
+    const dx = item.x - oldX;
+    const dy = item.y - oldY;
+    const moved = Math.hypot(dx, dy);
+    item.vx = dx * 0.54;
+    item.vy = dy * 0.54;
+    renderItem(item);
+    processRubbing(moved, dy);
+  }
+
+  function endDrag(event) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    document.getElementById(drag.id).classList.remove('dragging');
+    try {
+      svg.releasePointerCapture(event.pointerId);
+    } catch (error) {
+      /* 포인터가 이미 해제된 경우입니다. */
+    }
+    drag = null;
+    ['green', 'red'].forEach(function (id) {
+      resetStroke(items[id]);
+    });
+  }
+
+  function addForce(item, forceX, forceY) {
+    if (drag && drag.id === item.id) return;
+    item.vx += forceX;
+    item.vy += forceY;
+  }
+
+  function arrow(x1, y1, x2, y2, color, marker, width) {
+    const line = svgElement('line', {
+      x1:x1.toFixed(1),
+      y1:y1.toFixed(1),
+      x2:x2.toFixed(1),
+      y2:y2.toFixed(1),
+      stroke:color,
+      'stroke-width':(width || 4).toFixed(1),
+      'stroke-linecap':'round',
+      'marker-end':'url(#' + marker + ')'
+    });
+    forceLayer.appendChild(line);
+  }
+
+  function forceText(x, y, value, color) {
+    const text = svgElement('text', {
+      x:x.toFixed(1),
+      y:y.toFixed(1),
+      fill:color,
+      class:'force-label'
+    });
+    text.textContent = value;
+    forceLayer.appendChild(text);
+  }
+
+  function renderForces(activeAttractions, repelling) {
+    forceLayer.replaceChildren();
+    if (!forceToggle.checked) return;
+
+    activeAttractions.forEach(function (entry) {
+      const balloon = entry.balloon;
+      const glove = items.glove;
+      const dx = glove.x - balloon.x;
+      const dy = glove.y - balloon.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const nx = dx / d;
+      const ny = dy / d;
+      const length = 42 + 23 * entry.ratio;
+      const width = 2.8 + 3.2 * entry.ratio;
+      arrow(
+        balloon.x + nx * 72,
+        balloon.y + ny * 5,
+        balloon.x + nx * (72 + length),
+        balloon.y + ny * 5,
+        '#1769e0',
+        'arrowBlue',
+        width
+      );
+      forceText(
+        (balloon.x + glove.x) / 2,
+        (balloon.y + glove.y) / 2 - 18,
+        '끌어당김',
+        '#1769e0'
+      );
+    });
+
+    if (repelling) {
+      const green = items.green;
+      const red = items.red;
+      const dx = red.x - green.x;
+      const dy = red.y - green.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const nx = dx / d;
+      const ny = dy / d;
+      const length = 42 + 24 * repelling.ratio;
+      const width = 2.8 + 3.2 * repelling.ratio;
+      arrow(
+        green.x - nx * 68,
+        green.y - ny * 5,
+        green.x - nx * (68 + length),
+        green.y - ny * 5,
+        '#df4053',
+        'arrowRed',
+        width
+      );
+      arrow(
+        red.x + nx * 68,
+        red.y + ny * 5,
+        red.x + nx * (68 + length),
+        red.y + ny * 5,
+        '#df4053',
+        'arrowRed',
+        width
+      );
+      forceText(
+        (green.x + red.x) / 2,
+        (green.y + red.y) / 2 - 25,
+        '밀어냄',
+        '#df4053'
+      );
+    }
+  }
+
+  function beginElectronReturn(record) {
+    if (!record || record.returning || record.animating) return;
+
+    record.returning = true;
+    const balloon = items[record.balloonId];
+    const start = localToStage(balloon, BALLOON_SITES[record.balloonSlot], {x:7, y:-6.5});
+    const end = localToStage(items.glove, GLOVE_SITES[record.gloveSlot], {x:6.5, y:-6.5});
+    syncChargesFromElectrons();
+    updateChargeDisplay();
+    updateMeters();
+    setNotice(
+      balloonName(record.balloonId) + '으로 이동했던 전자 1개가 이동 시점으로부터 10초가 되어 원래 자리로 돌아갑니다.'
+    );
+
+    animateElectron(start, end, function () {
+      const index = transferRecords.indexOf(record);
+      if (index >= 0) transferRecords.splice(index, 1);
+      observed.returned = true;
+      syncChargesFromElectrons();
+      updateChargeDisplay();
+      updateMeters();
+      if (activeRecords().length === 0 && transferRecords.length === 0) {
+        setNotice('이동했던 전자가 모두 원래 면장갑 자리로 돌아와 두 물체가 다시 중성이 되었습니다.');
+      }
+    }, RETURN_ANIMATION_MS);
+  }
+
+  function integrateItem(item, dt) {
+    if (drag && drag.id === item.id) return;
+    item.x += item.vx * dt;
+    item.y += item.vy * dt;
+    const damping = Math.pow(0.87, dt);
+    item.vx *= damping;
+    item.vy *= damping;
+
+    if (item.x < 85 || item.x > 915) {
+      item.x = clamp(item.x, 85, 915);
+      item.vx *= -0.35;
+    }
+    if (item.y < 135 || item.y > 475) {
+      item.y = clamp(item.y, 135, 475);
+      item.vy *= -0.35;
+    }
+    if (Math.abs(item.vx) < 0.01) item.vx = 0;
+    if (Math.abs(item.vy) < 0.01) item.vy = 0;
+    renderItem(item);
+  }
+
+  function simulate(now) {
+    const dt = clamp((now - lastFrame) / 16.667, 0.35, 2.0);
+    lastFrame = now;
+    const glove = items.glove;
+    const activeAttractions = [];
+
+    ['green', 'red'].forEach(function (id) {
+      const balloon = items[id];
+      if (balloon.electronCount <= 0 || glove.lostElectrons <= 0) return;
+      const dx = glove.x - balloon.x;
+      const dy = glove.y - balloon.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      if (d < 365) {
+        const nx = dx / d;
+        const ny = dy / d;
+        const ratio = balloon.electronCount / MAX_ELECTRONS;
+        const visibleRatio = 0.18 + 0.82 * ratio;
+        if (d > 108) {
+          const originalStrength = Math.min(1.7, 0.15 + (d - 108) * 0.0065);
+          const strength = Math.min(
+            MAX_ATTRACTION_FORCE,
+            originalStrength * FORCE_SCALE * visibleRatio
+          );
+          addForce(balloon, nx * strength * dt, ny * strength * dt);
+        } else if (d < 82) {
+          const separation = Math.min(
+            CONTACT_SEPARATION_FORCE,
+            0.7 * FORCE_SCALE * visibleRatio
+          );
+          addForce(balloon, -nx * separation * dt, -ny * separation * dt);
+        }
+        const level = Math.max(1, Math.round(10 * ratio));
+        activeAttractions.push({balloon:balloon, distance:d, ratio:ratio, level:level});
+        if (d < 270) {
+          observed.attract = true;
+          setNotice(
+            '서로 다른 전하가 끌어당깁니다. ' + balloonName(id) +
+            '의 전자 수에 따른 힘의 세기는 ' + level + '/10입니다.'
+          );
+        }
+      }
+    });
+
+    const green = items.green;
+    const red = items.red;
+    let repelling = null;
+    if (green.electronCount > 0 && red.electronCount > 0) {
+      const dx = red.x - green.x;
+      const dy = red.y - green.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      if (d < 235) {
+        const nx = dx / d;
+        const ny = dy / d;
+        const closeness = clamp((235 - d) / 115, 0, 1.35);
+        const ratio = Math.sqrt(
+          (green.electronCount / MAX_ELECTRONS) *
+          (red.electronCount / MAX_ELECTRONS)
+        );
+        const visibleRatio = 0.18 + 0.82 * ratio;
+        const originalStrength = 0.55 + 2.4 * closeness * closeness;
+        const strength = Math.min(
+          MAX_REPULSION_FORCE,
+          originalStrength * FORCE_SCALE * visibleRatio
+        );
+        const greenHeld = drag && drag.id === 'green';
+        const redHeld = drag && drag.id === 'red';
+        addForce(
+          green,
+          -nx * strength * (redHeld ? HELD_REACTION_BOOST : 1) * dt,
+          -ny * strength * (redHeld ? HELD_REACTION_BOOST : 1) * dt
+        );
+        addForce(
+          red,
+          nx * strength * (greenHeld ? HELD_REACTION_BOOST : 1) * dt,
+          ny * strength * (greenHeld ? HELD_REACTION_BOOST : 1) * dt
+        );
+        const level = Math.max(1, Math.round(10 * ratio));
+        repelling = {ratio:ratio, level:level};
+        observed.repel = true;
+        setNotice('두 풍선은 같은 음전하를 띠므로 서로 밀어냅니다. 현재 힘의 세기는 ' + level + '/10입니다.');
+      }
+    }
+
+    Object.values(items).forEach(function (item) {
+      integrateItem(item, dt);
+    });
+    renderForces(activeAttractions, repelling);
+    updateMeters();
+
+    transferRecords.slice().forEach(function (record) {
+      if (!record.returning && !record.animating && now >= record.returnAt) {
+        beginElectronReturn(record);
+      }
+    });
+    requestAnimationFrame(simulate);
+  }
+
+  function resetAll() {
+    animationGeneration += 1;
+    drag = null;
+    transferRecords.splice(0, transferRecords.length);
+    effectsLayer.replaceChildren();
+    forceLayer.replaceChildren();
+    Object.values(items).forEach(function (item) {
+      item.x = item.homeX;
+      item.y = item.homeY;
+      item.vx = 0;
+      item.vy = 0;
+      item.charge = 0;
+      item.rub = 0;
+      if (item.type === 'balloon') {
+        item.electronCount = 0;
+        resetStroke(item);
+      } else {
+        item.lostElectrons = 0;
+      }
+      const element = document.getElementById(item.id);
+      element.classList.remove('dragging');
+      renderItem(item);
+    });
+    observed.attract = false;
+    observed.repel = false;
+    observed.returned = false;
+    syncChargesFromElectrons();
+    updateChargeDisplay();
+    updateMeters();
+    setNotice('전자 관찰을 켠 뒤 면장갑과 풍선을 겹쳐 위아래로 한 번 왕복해 보세요.');
+  }
+
+  document.querySelectorAll('.draggable').forEach(function (element) {
+    element.addEventListener('pointerdown', beginDrag);
+  });
+  svg.addEventListener('pointermove', moveDrag);
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', endDrag);
+
+  document.getElementById('resetBtn').addEventListener('click', resetAll);
+  document.getElementById('stopBtn').addEventListener('click', function () {
+    Object.values(items).forEach(function (item) {
+      item.vx = 0;
+      item.vy = 0;
+    });
+    setNotice('움직임을 멈췄습니다. 물체를 다시 잡아 실험을 계속할 수 있습니다.');
+  });
+  chargeToggle.addEventListener('change', function () {
+    updateChargeDisplay();
+    setNotice(
+      chargeToggle.checked
+        ? '전자와 고정된 원자핵을 표시했습니다. 파란 전자만 물체 사이를 이동합니다.'
+        : '전자 관찰을 껐습니다. 전하 상태와 힘의 작용은 계속 계산됩니다.'
+    );
+  });
+  forceToggle.addEventListener('change', function () {
+    if (!forceToggle.checked) forceLayer.replaceChildren();
+  });
+
+  /* 이동 전자가 물체보다 앞에 보이도록 효과 레이어를 맨 위로 올립니다. */
+  svg.appendChild(effectsLayer);
+  initParticleModels();
+  syncChargesFromElectrons();
+  updateChargeDisplay();
+  updateMeters();
+  Object.values(items).forEach(renderItem);
+  requestAnimationFrame(simulate);
+})();
+</script>
+</body>
+</html>
